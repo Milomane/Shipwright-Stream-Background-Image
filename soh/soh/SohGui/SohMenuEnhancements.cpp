@@ -1960,9 +1960,7 @@ void SohMenu::AddMenuEnhancements() {
         ObsBackground::OpenOutputFolder();
     });
 
-    AddWidget(path, "Pick image for Kokiri", WIDGET_CUSTOM).CustomFunction(ObsBackground::DrawPickerKokiri);
-
-    AddWidget(path, "Pick image for Everywhere else", WIDGET_CUSTOM).CustomFunction(ObsBackground::DrawPickerDefault);
+    AddWidget(path, "Area image mapping", WIDGET_CUSTOM).CustomFunction(ObsBackground::DrawAreaPickerList);
 
     AddWidget(path, "Refresh now", WIDGET_BUTTON)
         .Options(ButtonOptions().Size(UIWidgets::Sizes::Inline))
