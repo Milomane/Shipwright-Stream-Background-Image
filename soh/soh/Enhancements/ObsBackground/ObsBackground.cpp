@@ -152,6 +152,7 @@ enum class ObsArea : uint8_t {
     LonLonRanch,
     LakeHylia,
     Market,
+    TempleOfTime,
     HyruleCastle,
     KakarikoVillage,
     Graveyard,
@@ -201,7 +202,8 @@ static const AreaDef kAreas[] = {
     { ObsArea::LonLonRanch, "LonLonRanch", "Lon Lon Ranch" },
     { ObsArea::LakeHylia, "LakeHylia", "Lake Hylia" },
 
-    { ObsArea::Market, "Market", "Market / Temple of Time (batched)" },
+    { ObsArea::Market, "Market", "Market" },
+    { ObsArea::TempleOfTime, "Temple of Time", "Temple of Time" },
     { ObsArea::HyruleCastle, "HyruleCastle", "Hyrule Castle / Castle Grounds" },
 
     { ObsArea::KakarikoVillage, "KakarikoVillage", "Kakariko Village" },
@@ -253,11 +255,24 @@ std::string MakeImageCVarKey(ObsArea area) {
     return std::string(CVAR_OBS_BG("Image.")) + def->key;
 }
 
+bool IsGrottoScene(uint8_t sceneNum) {
+    switch (sceneNum) {
+        case SCENE_GROTTOS:
+        case SCENE_REDEAD_GRAVE:
+        case SCENE_ROYAL_FAMILYS_TOMB:
+        case SCENE_WINDMILL_AND_DAMPES_GRAVE:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool IsFairyFountainScene(uint8_t sceneNum) {
     switch (sceneNum) {
         case SCENE_GRAVE_WITH_FAIRYS_FOUNTAIN:
         case SCENE_GREAT_FAIRYS_FOUNTAIN_SPELLS:
         case SCENE_GREAT_FAIRYS_FOUNTAIN_MAGIC:
+        case SCENE_FAIRYS_FOUNTAIN: // <--- missing before
             return true;
         default:
             return false;
@@ -265,13 +280,13 @@ bool IsFairyFountainScene(uint8_t sceneNum) {
 }
 
 bool IsInteriorScene(uint8_t sceneNum) {
-    // Shops block (from location.cpp pattern)
+    // Shops block (kept as-is)
     if (sceneNum >= SCENE_BAZAAR && sceneNum <= SCENE_BOMBCHU_SHOP) {
         return true;
     }
 
-    // A small, safe set of obvious interiors (all names exist in location.cpp)
     switch (sceneNum) {
+        // Kokiri houses
         case SCENE_LINKS_HOUSE:
         case SCENE_KOKIRI_SHOP:
         case SCENE_MIDOS_HOUSE:
@@ -279,12 +294,16 @@ bool IsInteriorScene(uint8_t sceneNum) {
         case SCENE_TWINS_HOUSE:
         case SCENE_KNOW_IT_ALL_BROS_HOUSE:
 
+        // Market interiors
         case SCENE_POTION_SHOP_MARKET:
         case SCENE_SHOOTING_GALLERY:
         case SCENE_BOMBCHU_BOWLING_ALLEY:
         case SCENE_TREASURE_BOX_SHOP:
         case SCENE_BACK_ALLEY_HOUSE:
+        case SCENE_HAPPY_MASK_SHOP:
+        case SCENE_MARKET_GUARD_HOUSE:
 
+        // Kakariko interiors
         case SCENE_IMPAS_HOUSE:
         case SCENE_HOUSE_OF_SKULLTULA:
         case SCENE_KAKARIKO_CENTER_GUEST_HOUSE:
@@ -292,14 +311,16 @@ bool IsInteriorScene(uint8_t sceneNum) {
         case SCENE_POTION_SHOP_GRANNY:
         case SCENE_WINDMILL_AND_DAMPES_GRAVE:
 
+        // Other interiors
         case SCENE_GORON_SHOP:
         case SCENE_ZORA_SHOP:
-
         case SCENE_LON_LON_BUILDINGS:
         case SCENE_STABLE:
-
         case SCENE_LAKESIDE_LABORATORY:
         case SCENE_FISHING_POND:
+        case SCENE_DOG_LADY_HOUSE:
+        case SCENE_CARPENTERS_TENT:
+        case SCENE_GRAVEKEEPERS_HUT:
             return true;
 
         default:
@@ -308,8 +329,8 @@ bool IsInteriorScene(uint8_t sceneNum) {
 }
 
 ObsArea GetObsAreaForScene(uint8_t sceneNum) {
-    // Special buckets first
-    if (sceneNum == SCENE_GROTTOS) {
+    // Special buckets first (kept)
+    if (IsGrottoScene(sceneNum)) {
         return ObsArea::Grottos;
     }
     if (IsFairyFountainScene(sceneNum)) {
@@ -319,7 +340,6 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         return ObsArea::Interiors;
     }
 
-    // Main mapping based on location.cpp GetAreaFromScene()
     switch (sceneNum) {
         // Kokiri / Lost Woods / Meadow
         case SCENE_KOKIRI_FOREST:
@@ -337,14 +357,23 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         case SCENE_LAKE_HYLIA:
             return ObsArea::LakeHylia;
 
-        // Market batch
+        // Market batch (completed to match reference grouping)
         case SCENE_MARKET_ENTRANCE_DAY:
         case SCENE_MARKET_ENTRANCE_NIGHT:
+        case SCENE_MARKET_ENTRANCE_RUINS:
+        case SCENE_BACK_ALLEY_DAY:
+        case SCENE_BACK_ALLEY_NIGHT:
         case SCENE_MARKET_DAY:
         case SCENE_MARKET_NIGHT:
         case SCENE_MARKET_RUINS:
-        case SCENE_TEMPLE_OF_TIME:
+        case SCENE_TEMPLE_OF_TIME_EXTERIOR_DAY:
+        case SCENE_TEMPLE_OF_TIME_EXTERIOR_NIGHT:
+        case SCENE_TEMPLE_OF_TIME_EXTERIOR_RUINS:
             return ObsArea::Market;
+
+        // Temple of Time (interior)
+        case SCENE_TEMPLE_OF_TIME:
+            return ObsArea::TempleOfTime;
 
         // Hyrule Castle batch
         case SCENE_HYRULE_CASTLE:
@@ -357,9 +386,8 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         case SCENE_KAKARIKO_VILLAGE:
             return ObsArea::KakarikoVillage;
         case SCENE_GRAVEYARD:
-        case SCENE_ROYAL_FAMILYS_TOMB:
-        case SCENE_SHADOW_TEMPLE_BOSS:
             return ObsArea::Graveyard;
+
         case SCENE_DEATH_MOUNTAIN_TRAIL:
             return ObsArea::DeathMountainTrail;
         case SCENE_GORON_CITY:
@@ -416,20 +444,21 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
             return ObsArea::SpiritTemple;
 
         case SCENE_SHADOW_TEMPLE:
+        case SCENE_SHADOW_TEMPLE_BOSS:
             return ObsArea::ShadowTemple;
 
         case SCENE_BOTTOM_OF_THE_WELL:
             return ObsArea::BottomOfTheWell;
-
         case SCENE_ICE_CAVERN:
             return ObsArea::IceCavern;
-
         case SCENE_GERUDO_TRAINING_GROUND:
             return ObsArea::GerudoTrainingGround;
 
+        // Ganon / Endgame
         case SCENE_INSIDE_GANONS_CASTLE:
         case SCENE_GANONS_TOWER:
         case SCENE_GANONS_TOWER_COLLAPSE_INTERIOR:
+        case SCENE_INSIDE_GANONS_CASTLE_COLLAPSE:
         case SCENE_GANONS_TOWER_COLLAPSE_EXTERIOR:
         case SCENE_OUTSIDE_GANONS_CASTLE:
         case SCENE_GANONDORF_BOSS:
@@ -440,6 +469,7 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
             return ObsArea::Unknown;
     }
 }
+
 
 // ---------- Picking & refresh ----------
 
@@ -512,6 +542,7 @@ void InitOnce() {
 void ForceRefresh() {
     if (!gPlayState)
         return;
+
     RefreshForScene(gPlayState->sceneNum);
 }
 
