@@ -6,6 +6,9 @@
 #include <soh/Enhancements/cosmetics/authenticGfxPatches.h>
 #include <soh/Enhancements/enemyrandomizer.h>
 #include <soh/Enhancements/TimeDisplay/TimeDisplay.h>
+#include "soh/Enhancements/ObsBackground/ObsBackground.h"
+
+
 
 extern "C" {
 #include "functions.h"
@@ -1935,6 +1938,37 @@ void SohMenu::AddMenuEnhancements() {
             .CVar(timer.timeEnable)
             .Callback([](WidgetInfo& info) { TimeDisplayUpdateDisplayOptions(); });
     }
+
+    // OBS Background
+    path.sidebarName = "Streaming";
+    AddSidebarEntry("Enhancements", path.sidebarName, 1);
+    path.column = SECTION_COLUMN_1;
+
+    AddWidget(path, "OBS Background", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(path, "Enable", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("ObsBackground.Enable"))
+        .Options(CheckboxOptions().Tooltip("Updates obs_background/current.png when you change areas."));
+
+    AddWidget(path, "Write next to soh.exe (portable)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("ObsBackground.UseExeDir"))
+        .Options(CheckboxOptions().Tooltip("If disabled, uses SoH App Files folder (recommended)."));
+
+    AddWidget(path, "Open output folder", WIDGET_BUTTON)
+        .Options(ButtonOptions().Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo&) {
+        ObsBackground::OpenOutputFolder();
+    });
+
+    AddWidget(path, "Area image mapping", WIDGET_CUSTOM).CustomFunction(ObsBackground::DrawAreaPickerList);
+
+    AddWidget(path, "Refresh now", WIDGET_BUTTON)
+        .Options(ButtonOptions().Size(UIWidgets::Sizes::Inline))
+        .Callback([](WidgetInfo&) {
+        ObsBackground::ForceRefresh();
+    });
+
+    ObsBackground::InitOnce();
 }
 
 } // namespace SohGui
