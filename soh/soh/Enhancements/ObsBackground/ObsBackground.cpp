@@ -21,7 +21,7 @@ extern PlayState* gPlayState;
 }
 
 // CVar prefix
-#define CVAR_OBS_BG(x) "gEnhancements.ObsBackground." x
+#define CVAR_OBS_BG(x) CVAR_ENHANCEMENT("ObsBackground.") x
 
 namespace fs = std::filesystem;
 
@@ -39,7 +39,7 @@ fs::path GetExeDirFallbackEmpty() {
 }
 
 fs::path GetRootDir() {
-    const int useExeDir = CVarGetInteger(CVAR_ENHANCEMENT("ObsBackground.UseExeDir"), 0);
+    const int useExeDir = CVarGetInteger(CVAR_OBS_BG("UseExeDir"), 0);
     if (useExeDir) {
         fs::path exe = GetExeDirFallbackEmpty();
         if (!exe.empty())
@@ -251,7 +251,6 @@ std::string MakeImageCVarKey(ObsArea area) {
     if (!def) {
         return CVAR_OBS_BG("Image.Unknown");
     }
-    // prefix "Image." is kept stable
     return std::string(CVAR_OBS_BG("Image.")) + def->key;
 }
 
@@ -272,7 +271,7 @@ bool IsFairyFountainScene(uint8_t sceneNum) {
         case SCENE_GRAVE_WITH_FAIRYS_FOUNTAIN:
         case SCENE_GREAT_FAIRYS_FOUNTAIN_SPELLS:
         case SCENE_GREAT_FAIRYS_FOUNTAIN_MAGIC:
-        case SCENE_FAIRYS_FOUNTAIN: // <--- missing before
+        case SCENE_FAIRYS_FOUNTAIN:
             return true;
         default:
             return false;
@@ -280,7 +279,6 @@ bool IsFairyFountainScene(uint8_t sceneNum) {
 }
 
 bool IsInteriorScene(uint8_t sceneNum) {
-    // Shops block (kept as-is)
     if (sceneNum >= SCENE_BAZAAR && sceneNum <= SCENE_BOMBCHU_SHOP) {
         return true;
     }
@@ -329,7 +327,7 @@ bool IsInteriorScene(uint8_t sceneNum) {
 }
 
 ObsArea GetObsAreaForScene(uint8_t sceneNum) {
-    // Special buckets first (kept)
+    // Special buckets first
     if (IsGrottoScene(sceneNum)) {
         return ObsArea::Grottos;
     }
@@ -351,13 +349,14 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
 
         // Overworld core
         case SCENE_HYRULE_FIELD:
+        case SCENE_CUTSCENE_MAP:
             return ObsArea::HyruleField;
         case SCENE_LON_LON_RANCH:
             return ObsArea::LonLonRanch;
         case SCENE_LAKE_HYLIA:
             return ObsArea::LakeHylia;
 
-        // Market batch (completed to match reference grouping)
+        // Market batch
         case SCENE_MARKET_ENTRANCE_DAY:
         case SCENE_MARKET_ENTRANCE_NIGHT:
         case SCENE_MARKET_ENTRANCE_RUINS:
@@ -511,7 +510,7 @@ void RefreshForScene(uint8_t sceneNum) {
 }
 
 void OnFrameUpdate() {
-    if (!CVarGetInteger(CVAR_ENHANCEMENT("ObsBackground.Enable"), 0))
+    if (!CVarGetInteger(CVAR_OBS_BG("Enable"), 0))
         return;
     if (!gPlayState)
         return;
