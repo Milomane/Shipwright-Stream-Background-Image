@@ -14,49 +14,58 @@
 #include "libultraship/libultraship.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 
-// For SCENE_* and gPlayState
+// For SCENE_* and gPlayState/gSaveContext
 extern "C" {
 #include "global.h"
+#include "variables.h"
 extern PlayState* gPlayState;
 }
 
-// CVar prefix
-#define CVAR_OBS_BG(x) "gEnhancements.ObsBackground." x
+#define CVAR_OBS_BG(x) CVAR_ENHANCEMENT("ObsBackground.") x
 
 namespace fs = std::filesystem;
 
 namespace {
+
 bool sInitialized = false;
 int sLastScene = -1;
 
+// ---------- Filesystem helpers ----------
+
 fs::path GetExeDirFallbackEmpty() {
     char* base = SDL_GetBasePath();
-    if (!base)
+    if (!base) {
         return {};
+    }
     fs::path p(base);
     SDL_free(base);
     return p;
 }
 
 fs::path GetRootDir() {
-    const int useExeDir = CVarGetInteger(CVAR_ENHANCEMENT("ObsBackground.UseExeDir"), 0);
+    const int useExeDir = CVarGetInteger(CVAR_OBS_BG("UseExeDir"), 0);
     if (useExeDir) {
         fs::path exe = GetExeDirFallbackEmpty();
-        if (!exe.empty())
+        if (!exe.empty()) {
             return exe;
+        }
     }
+
     return fs::path(Ship::Context::GetInstance()->GetAppDirectoryPath());
 }
 
 fs::path GetOutDir() {
     return GetRootDir() / "obs_background";
 }
+
 fs::path GetImagesDir() {
     return GetOutDir() / "images";
 }
+
 fs::path GetCurrentPng() {
     return GetOutDir() / "current.png";
 }
+
 fs::path GetCurrentHtml() {
     return GetOutDir() / "current.html";
 }
@@ -68,12 +77,12 @@ void EnsureFolders() {
 
 void EnsureHtmlTemplate() {
     const fs::path htmlPath = GetCurrentHtml();
-    if (fs::exists(htmlPath))
+    if (fs::exists(htmlPath)) {
         return;
+    }
 
     std::ofstream f(htmlPath, std::ios::binary);
-    f <<
-        R"(<!doctype html>
+    f << R"(<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -95,12 +104,14 @@ void EnsureHtmlTemplate() {
 std::vector<std::string> ListImages() {
     std::vector<std::string> out;
     std::error_code ec;
-    if (!fs::exists(GetImagesDir(), ec))
+    if (!fs::exists(GetImagesDir(), ec)) {
         return out;
+    }
 
     for (auto& e : fs::directory_iterator(GetImagesDir(), ec)) {
-        if (ec || !e.is_regular_file())
+        if (ec || !e.is_regular_file()) {
             continue;
+        }
 
         auto ext = e.path().extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
@@ -109,65 +120,78 @@ std::vector<std::string> ListImages() {
             out.push_back(e.path().filename().string());
         }
     }
+
     std::sort(out.begin(), out.end());
     return out;
 }
 
 bool ContainsI(std::string_view text, std::string_view needle) {
-    if (needle.empty())
+    if (needle.empty()) {
         return true;
+    }
 
     auto it = std::search(text.begin(), text.end(), needle.begin(), needle.end(), [](char a, char b) {
-        return (char)std::tolower((unsigned char)a) == (char)std::tolower((unsigned char)b);
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(a))) ==
+               static_cast<char>(std::tolower(static_cast<unsigned char>(b)));
     });
+
     return it != text.end();
 }
 
-void CopyToCurrent(const std::string& fileName) {
-    if (fileName.empty())
-        return;
+void CopyToCurrent(const std::string& filename) {
+    EnsureFolders();
 
-    const fs::path src = GetImagesDir() / fileName;
-    const fs::path dst = GetCurrentPng();
     std::error_code ec;
-    if (!fs::exists(src, ec) || ec)
+
+    // Empty = remove current.png (lets OBS keep last frame depending on its caching, but avoids copying garbage)
+    if (filename.empty()) {
+        fs::remove(GetCurrentPng(), ec);
         return;
+    }
+
+    const fs::path src = GetImagesDir() / filename;
+    const fs::path dst = GetCurrentPng();
+
+    if (!fs::exists(src, ec)) {
+        return;
+    }
 
     fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
 }
 
-// ---------- Area system (based on location.cpp mapping) ----------
+// ---------- Area mapping ----------
 
-enum class ObsArea : uint8_t {
-    // Special buckets
+enum class ObsArea : int {
     Interiors,
     Grottos,
     FairyFountains,
 
-    // Overworld
     Kokiri,
     LostWoods,
     SacredForestMeadow,
     HyruleField,
     LonLonRanch,
     LakeHylia,
+
     Market,
     TempleOfTime,
     HyruleCastle,
+
     KakarikoVillage,
     Graveyard,
     DeathMountainTrail,
     GoronCity,
     DeathMountainCrater,
+
     ZorasRiver,
     ZorasDomain,
     ZorasFountain,
+
     GerudoValley,
     GerudoFortress,
     Wasteland,
     DesertColossus,
 
-    // Dungeons
     DekuTree,
     DodongosCavern,
     JabuJabu,
@@ -181,7 +205,7 @@ enum class ObsArea : uint8_t {
     GerudoTrainingGround,
     GanonsCastle,
 
-    Unknown
+    Unknown,
 };
 
 struct AreaDef {
@@ -203,7 +227,7 @@ static const AreaDef kAreas[] = {
     { ObsArea::LakeHylia, "LakeHylia", "Lake Hylia" },
 
     { ObsArea::Market, "Market", "Market" },
-    { ObsArea::TempleOfTime, "Temple of Time", "Temple of Time" },
+    { ObsArea::TempleOfTime, "TempleOfTime", "Temple of Time" },
     { ObsArea::HyruleCastle, "HyruleCastle", "Hyrule Castle / Castle Grounds" },
 
     { ObsArea::KakarikoVillage, "KakarikoVillage", "Kakariko Village" },
@@ -237,22 +261,28 @@ static const AreaDef kAreas[] = {
 
 const AreaDef* FindAreaDef(ObsArea id) {
     for (const auto& a : kAreas) {
-        if (a.id == id)
+        if (a.id == id) {
             return &a;
+        }
     }
     return nullptr;
 }
 
-std::string MakeImageCVarKey(ObsArea area) {
-    if (area == ObsArea::Unknown) {
-        return CVAR_OBS_BG("Image.Unknown");
-    }
+static bool IsAdultLink() {
+#ifdef LINK_AGE_ADULT
+    return gSaveContext.linkAge == LINK_AGE_ADULT;
+#else
+    // In OoT decomp, linkAge is typically 0 = child, 1 = adult.
+    return gSaveContext.linkAge != 0;
+#endif
+}
+
+static std::string MakeImageCVarKey(ObsArea area, bool adult) {
     const AreaDef* def = FindAreaDef(area);
     if (!def) {
-        return CVAR_OBS_BG("Image.Unknown");
+        return std::string(CVAR_OBS_BG("Image.Unknown")) + (adult ? ".Adult" : ".Child");
     }
-    // prefix "Image." is kept stable
-    return std::string(CVAR_OBS_BG("Image.")) + def->key;
+    return std::string(CVAR_OBS_BG("Image.")) + def->key + (adult ? ".Adult" : ".Child");
 }
 
 bool IsGrottoScene(uint8_t sceneNum) {
@@ -272,7 +302,7 @@ bool IsFairyFountainScene(uint8_t sceneNum) {
         case SCENE_GRAVE_WITH_FAIRYS_FOUNTAIN:
         case SCENE_GREAT_FAIRYS_FOUNTAIN_SPELLS:
         case SCENE_GREAT_FAIRYS_FOUNTAIN_MAGIC:
-        case SCENE_FAIRYS_FOUNTAIN: // <--- missing before
+        case SCENE_FAIRYS_FOUNTAIN:
             return true;
         default:
             return false;
@@ -280,7 +310,7 @@ bool IsFairyFountainScene(uint8_t sceneNum) {
 }
 
 bool IsInteriorScene(uint8_t sceneNum) {
-    // Shops block (kept as-is)
+    // Shops block
     if (sceneNum >= SCENE_BAZAAR && sceneNum <= SCENE_BOMBCHU_SHOP) {
         return true;
     }
@@ -329,7 +359,6 @@ bool IsInteriorScene(uint8_t sceneNum) {
 }
 
 ObsArea GetObsAreaForScene(uint8_t sceneNum) {
-    // Special buckets first (kept)
     if (IsGrottoScene(sceneNum)) {
         return ObsArea::Grottos;
     }
@@ -341,7 +370,6 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
     }
 
     switch (sceneNum) {
-        // Kokiri / Lost Woods / Meadow
         case SCENE_KOKIRI_FOREST:
             return ObsArea::Kokiri;
         case SCENE_LOST_WOODS:
@@ -349,15 +377,15 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         case SCENE_SACRED_FOREST_MEADOW:
             return ObsArea::SacredForestMeadow;
 
-        // Overworld core
         case SCENE_HYRULE_FIELD:
+        case SCENE_CUTSCENE_MAP:
             return ObsArea::HyruleField;
         case SCENE_LON_LON_RANCH:
             return ObsArea::LonLonRanch;
         case SCENE_LAKE_HYLIA:
             return ObsArea::LakeHylia;
 
-        // Market batch (completed to match reference grouping)
+        // Market + ToT exteriors
         case SCENE_MARKET_ENTRANCE_DAY:
         case SCENE_MARKET_ENTRANCE_NIGHT:
         case SCENE_MARKET_ENTRANCE_RUINS:
@@ -371,18 +399,15 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         case SCENE_TEMPLE_OF_TIME_EXTERIOR_RUINS:
             return ObsArea::Market;
 
-        // Temple of Time (interior)
         case SCENE_TEMPLE_OF_TIME:
             return ObsArea::TempleOfTime;
 
-        // Hyrule Castle batch
         case SCENE_HYRULE_CASTLE:
         case SCENE_CASTLE_COURTYARD_GUARDS_DAY:
         case SCENE_CASTLE_COURTYARD_GUARDS_NIGHT:
         case SCENE_CASTLE_COURTYARD_ZELDA:
             return ObsArea::HyruleCastle;
 
-        // Kakariko / Graveyard / DM
         case SCENE_KAKARIKO_VILLAGE:
             return ObsArea::KakarikoVillage;
         case SCENE_GRAVEYARD:
@@ -395,7 +420,6 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         case SCENE_DEATH_MOUNTAIN_CRATER:
             return ObsArea::DeathMountainCrater;
 
-        // Zora
         case SCENE_ZORAS_RIVER:
             return ObsArea::ZorasRiver;
         case SCENE_ZORAS_DOMAIN:
@@ -403,7 +427,6 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         case SCENE_ZORAS_FOUNTAIN:
             return ObsArea::ZorasFountain;
 
-        // Gerudo / Desert
         case SCENE_GERUDO_VALLEY:
             return ObsArea::GerudoValley;
         case SCENE_GERUDOS_FORTRESS:
@@ -454,7 +477,7 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
         case SCENE_GERUDO_TRAINING_GROUND:
             return ObsArea::GerudoTrainingGround;
 
-        // Ganon / Endgame
+        // Ganon
         case SCENE_INSIDE_GANONS_CASTLE:
         case SCENE_GANONS_TOWER:
         case SCENE_GANONS_TOWER_COLLAPSE_INTERIOR:
@@ -470,8 +493,7 @@ ObsArea GetObsAreaForScene(uint8_t sceneNum) {
     }
 }
 
-
-// ---------- Picking & refresh ----------
+// ---------- UI helpers ----------
 
 static void DrawPickerWithList(const char* label, const char* cvarKey, const std::vector<std::string>& files) {
     std::string current = CVarGetString(cvarKey, "");
@@ -485,8 +507,9 @@ static void DrawPickerWithList(const char* label, const char* cvarKey, const std
             if (ImGui::Selectable(f.c_str(), selected)) {
                 CVarSetString(cvarKey, f.c_str());
             }
-            if (selected)
+            if (selected) {
                 ImGui::SetItemDefaultFocus();
+            }
         }
         ImGui::EndCombo();
     }
@@ -494,31 +517,65 @@ static void DrawPickerWithList(const char* label, const char* cvarKey, const std
 
 void RefreshForScene(uint8_t sceneNum) {
     const ObsArea area = GetObsAreaForScene(sceneNum);
+    const bool adult = !IsAdultLink();
+
+    auto WithSuffix = [](const char* base, bool isAdult) {
+        return std::string(base) + (isAdult ? ".Adult" : ".Child");
+    };
 
     std::string pick;
+
+    // 1) Area-specific (try current age, then the other age)
     if (area == ObsArea::Unknown) {
-        pick = CVarGetString(CVAR_OBS_BG("Image.Unknown"), "");
+        const std::string keyPrimary   = WithSuffix(CVAR_OBS_BG("Image.Unknown"), adult);
+        const std::string keySecondary = WithSuffix(CVAR_OBS_BG("Image.Unknown"), !adult);
+
+        pick = CVarGetString(keyPrimary.c_str(), "");
+        if (pick.empty()) pick = CVarGetString(keySecondary.c_str(), "");
+
+        // Legacy single-slot key
+        if (pick.empty()) pick = CVarGetString(CVAR_OBS_BG("Image.Unknown"), "");
     } else {
-        const std::string areaKey = MakeImageCVarKey(area);
-        pick = CVarGetString(areaKey.c_str(), "");
+        const std::string keyPrimary   = MakeImageCVarKey(area, adult);
+        const std::string keySecondary = MakeImageCVarKey(area, !adult);
+
+        pick = CVarGetString(keyPrimary.c_str(), "");
+        if (pick.empty()) pick = CVarGetString(keySecondary.c_str(), "");
+
+        // Legacy single-slot key
+        if (pick.empty()) {
+            if (const AreaDef* def = FindAreaDef(area)) {
+                const std::string legacyKey = std::string(CVAR_OBS_BG("Image.")) + def->key;
+                pick = CVarGetString(legacyKey.c_str(), "");
+            }
+        }
     }
 
+    // 2) Default fallback (per-age, then legacy)
     if (pick.empty()) {
-        pick = CVarGetString(CVAR_OBS_BG("Image.Default"), "");
+        const std::string defPrimary   = WithSuffix(CVAR_OBS_BG("Image.Default"), adult);
+        const std::string defSecondary = WithSuffix(CVAR_OBS_BG("Image.Default"), !adult);
+
+        pick = CVarGetString(defPrimary.c_str(), "");
+        if (pick.empty()) pick = CVarGetString(defSecondary.c_str(), "");
+        if (pick.empty()) pick = CVarGetString(CVAR_OBS_BG("Image.Default"), "");
     }
 
     CopyToCurrent(pick);
 }
 
 void OnFrameUpdate() {
-    if (!CVarGetInteger(CVAR_ENHANCEMENT("ObsBackground.Enable"), 0))
+    if (!CVarGetInteger(CVAR_OBS_BG("Enable"), 0)) {
         return;
-    if (!gPlayState)
+    }
+    if (!gPlayState) {
         return;
+    }
 
     const int scene = static_cast<int>(gPlayState->sceneNum);
-    if (scene == sLastScene)
+    if (scene == sLastScene) {
         return;
+    }
 
     sLastScene = scene;
     RefreshForScene(static_cast<uint8_t>(scene));
@@ -529,8 +586,9 @@ void OnFrameUpdate() {
 namespace ObsBackground {
 
 void InitOnce() {
-    if (sInitialized)
+    if (sInitialized) {
         return;
+    }
     sInitialized = true;
 
     EnsureFolders();
@@ -540,8 +598,9 @@ void InitOnce() {
 }
 
 void ForceRefresh() {
-    if (!gPlayState)
+    if (!gPlayState) {
         return;
+    }
 
     RefreshForScene(gPlayState->sceneNum);
 }
@@ -556,11 +615,29 @@ void OpenOutputFolder() {
 }
 
 void DrawPickerDefault(WidgetInfo&) {
-    auto files = ListImages();
-    DrawPickerWithList("Default (fallback)", CVAR_OBS_BG("Image.Default"), files);
+    const auto files = ListImages();
+
+    const std::string keyChild = std::string(CVAR_OBS_BG("Image.Default")) + ".Child";
+    const std::string keyAdult = std::string(CVAR_OBS_BG("Image.Default")) + ".Adult";
+
+    ImGui::TextUnformatted("Default fallback:");
+    ImGui::Indent();
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Child");
+    ImGui::SameLine(120.0f);
+    ImGui::SetNextItemWidth(260.0f);
+    DrawPickerWithList("##default_child", keyChild.c_str(), files);
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Adult");
+    ImGui::SameLine(120.0f);
+    ImGui::SetNextItemWidth(260.0f);
+    DrawPickerWithList("##default_adult", keyAdult.c_str(), files);
+
+    ImGui::Unindent();
 }
 
-// searchable list for all areas
 void DrawAreaPickerList(WidgetInfo&) {
     EnsureFolders();
     EnsureHtmlTemplate();
@@ -572,27 +649,99 @@ void DrawAreaPickerList(WidgetInfo&) {
 
     ImGui::Spacing();
     ImGui::TextUnformatted("Fallbacks:");
-    ImGui::Indent();
-    DrawPickerWithList("Unknown (scene not mapped)", CVAR_OBS_BG("Image.Unknown"), files);
-    DrawPickerWithList("Default (if area empty)", CVAR_OBS_BG("Image.Default"), files);
-    ImGui::Unindent();
+
+    // Unknown per-age
+    {
+        const std::string keyChild = std::string(CVAR_OBS_BG("Image.Unknown")) + ".Child";
+        const std::string keyAdult = std::string(CVAR_OBS_BG("Image.Unknown")) + ".Adult";
+
+        ImGui::Indent();
+        ImGui::TextUnformatted("Unknown scene:");
+        ImGui::SameLine(160.0f);
+        ImGui::TextDisabled("(if scene not mapped)");
+
+        ImGui::Indent();
+        ImGui::TextUnformatted("Child");
+        ImGui::SameLine(120.0f);
+        ImGui::SetNextItemWidth(260.0f);
+        DrawPickerWithList("##unknown_child", keyChild.c_str(), files);
+
+        ImGui::TextUnformatted("Adult");
+        ImGui::SameLine(120.0f);
+        ImGui::SetNextItemWidth(260.0f);
+        DrawPickerWithList("##unknown_adult", keyAdult.c_str(), files);
+        ImGui::Unindent();
+        ImGui::Unindent();
+    }
+
+    // Default per-age
+    {
+        const std::string keyChild = std::string(CVAR_OBS_BG("Image.Default")) + ".Child";
+        const std::string keyAdult = std::string(CVAR_OBS_BG("Image.Default")) + ".Adult";
+
+        ImGui::Indent();
+        ImGui::TextUnformatted("Default:");
+        ImGui::SameLine(160.0f);
+        ImGui::TextDisabled("(if area empty)");
+
+        ImGui::Indent();
+        ImGui::TextUnformatted("Child");
+        ImGui::SameLine(120.0f);
+        ImGui::SetNextItemWidth(260.0f);
+        DrawPickerWithList("##fallback_default_child", keyChild.c_str(), files);
+
+        ImGui::TextUnformatted("Adult");
+        ImGui::SameLine(120.0f);
+        ImGui::SetNextItemWidth(260.0f);
+        DrawPickerWithList("##fallback_default_adult", keyAdult.c_str(), files);
+        ImGui::Unindent();
+        ImGui::Unindent();
+    }
 
     ImGui::Separator();
 
-    for (const auto& a : kAreas) {
-        // (Interiors/Grottos/FairyFountains + all main areas/dungeons)
-        if (!ContainsI(a.name, filter) && !ContainsI(a.key, filter))
-            continue;
+    // Main table: Area | Child | Adult
+    if (ImGui::BeginTable("##obs_bg_table", 3,
+                          ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
+                              ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("Area", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Child", ImGuiTableColumnFlags_WidthFixed, 280.0f);
+        ImGui::TableSetupColumn("Adult", ImGuiTableColumnFlags_WidthFixed, 280.0f);
+        ImGui::TableHeadersRow();
 
-        const std::string cvarKey = std::string(CVAR_OBS_BG("Image.")) + a.key;
+        for (const auto& a : kAreas) {
+            if (!ContainsI(a.name, filter) && !ContainsI(a.key, filter)) {
+                continue;
+            }
 
-        ImGui::PushID(a.key);
-        ImGui::TextUnformatted(a.name);
-        ImGui::SameLine(320.0f);
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        DrawPickerWithList("##img", cvarKey.c_str(), files);
-        ImGui::PopID();
+            const std::string cvarChild = std::string(CVAR_OBS_BG("Image.")) + a.key + ".Child";
+            const std::string cvarAdult = std::string(CVAR_OBS_BG("Image.")) + a.key + ".Adult";
+
+            ImGui::TableNextRow();
+
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(a.name);
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::PushID((std::string(a.key) + "_child").c_str());
+            ImGui::SetNextItemWidth(260.0f);
+            DrawPickerWithList("##child", cvarChild.c_str(), files);
+            ImGui::PopID();
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::PushID((std::string(a.key) + "_adult").c_str());
+            ImGui::SetNextItemWidth(260.0f);
+            DrawPickerWithList("##adult", cvarAdult.c_str(), files);
+            ImGui::PopID();
+        }
+
+        ImGui::EndTable();
     }
+}
+
+void AutoAssignMissing() {
+    // Stub: you mentioned this exists in your current system.
+    // Keeping it here so the build/link doesn't break if the menu references it.
 }
 
 } // namespace ObsBackground
